@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一日の文字盤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&family=Zen+Kaku+Gothic+New:wght@400;500&display=swap">
+<style>
+  :root { color-scheme: light dark; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="一日の予定の文字盤"></canvas>
+<script>
+(() => {
+// ===== 時間割（変えたい時はここを書き換える） =====
+// s: 開始時刻, e: 終了時刻（時間。0.5 = 30分）, name: 見出し, items: 詳細
+const SCHED = [
+  {s:0,   e:0.5, name:'HUEL',       items:[]},
+  {s:0.5, e:3,   name:'ストレッチ', items:['カルマグ・鉄']},
+  {s:3,   e:10,  name:'睡眠',       items:[]},
+  {s:10,  e:11,  name:'起床',       items:['HUEL+フルーツ+クレアチン','掃除','デュタミノ','スクワット']},
+  {s:11,  e:14,  name:'仕事',       items:[]},
+  {s:14,  e:16,  name:'昼メシ',     items:['瞑想or自立訓練','買い出し']},
+  {s:16,  e:21,  name:'仕事',       items:[]},
+  {s:21,  e:24,  name:'夕メシ',     items:['筋トレorHIIT','風呂','通話']},
+];
+
+// ===== テーマ: ?theme=dark|light で固定、指定なしはOSに追従 =====
+const params = new URLSearchParams(location.search);
+const forced = params.get('theme');
+if (forced === 'dark' || forced === 'light') document.documentElement.dataset.theme = forced;
+const mq = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => forced ? forced === 'dark' : mq.matches;
+// 隠しパラメータ: &speed=N で早送り、&from=HH:MM で開始時刻を指定（確認用）
+const SPEED = Math.max(0, +params.get('speed') || 1);
+const FROM = params.get('from');
+
+const S = 300, C = 150, RO = 118, RI = 44, TAU = Math.PI * 2;
+const A = h => h / 24 * TAU - Math.PI / 2;
+const pol = (a, r) => [C + Math.cos(a) * r, C + Math.sin(a) * r];
+
+const cv = document.getElementById('c'), x = cv.getContext('2d');
+let DPR = 1, scale = 1;
+function resize() {
+  const size = Math.max(60, Math.min(innerWidth, innerHeight));
+  DPR = Math.min(devicePixelRatio || 1, 3);
+  scale = size / S;
+  cv.style.width = cv.style.height = size + 'px';
+  cv.width = cv.height = Math.round(size * DPR);
+}
+addEventListener('resize', resize); resize();
+
+let INK, HALO;
+const W = a => `rgba(${INK},${a})`;
+
+function segPath(a0, a1, r0, r1) {
+  x.beginPath(); x.arc(C, C, r1, a0, a1); x.arc(C, C, r0, a1, a0, true); x.closePath();
+}
+const blur = v => v * DPR * scale;
+
+function base() {
+  SCHED.forEach(s => { segPath(A(s.s), A(s.e), RI, RO); x.fillStyle = W(.02); x.fill(); });
+  x.strokeStyle = W(.22); x.lineWidth = 1;
+  SCHED.forEach(s => {
+    const a = A(s.s), [p, q] = pol(a, RI), [u, v] = pol(a, RO);
+    x.beginPath(); x.moveTo(p, q); x.lineTo(u, v); x.stroke();
+  });
+  x.beginPath(); x.arc(C, C, RO, 0, TAU); x.stroke();
+  x.beginPath(); x.arc(C, C, RI, 0, TAU); x.stroke();
+  for (let h = 0; h < 24; h++) {
+    const major = h % 6 === 0, a = A(h);
+    const [p, q] = pol(a, RO + 5), [u, v] = pol(a, RO + (major ? 12 : 9));
+    x.strokeStyle = W(major ? .55 : .24); x.lineWidth = major ? 1.2 : .8;
+    x.beginPath(); x.moveTo(p, q); x.lineTo(u, v); x.stroke();
+  }
+  x.fillStyle = W(.5); x.font = '12px Marcellus, serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  [0, 6, 12, 18].forEach(h => { const [p, q] = pol(A(h), RO + 22); x.fillText(String(h), p, q); });
+}
+
+function rim(seg) {
+  const a0 = A(seg.s), a1 = A(seg.e);
+  segPath(a0, a1, RI, RO); x.fillStyle = W(.06); x.fill();
+  x.save(); x.shadowColor = `rgb(${INK})`;
+  for (const [bl, lw, al] of [[18, 5, .5], [6, 2.6, 1]]) {
+    x.shadowBlur = blur(bl); x.lineWidth = lw; x.strokeStyle = W(al);
+    x.beginPath(); x.arc(C, C, RO, a0, a1); x.stroke();
+  }
+  x.shadowBlur = blur(4); x.lineWidth = 1; x.strokeStyle = W(.7);
+  x.beginPath(); x.arc(C, C, RI, a0, a1); x.stroke();
+  x.strokeStyle = W(.5);
+  [a0, a1].forEach(a => { const [p, q] = pol(a, RI), [u, v] = pol(a, RO); x.beginPath(); x.moveTo(p, q); x.lineTo(u, v); x.stroke(); });
+  x.restore();
+}
+
+function hand(h) {
+  const a = A(h), [p, q] = pol(a, RI), [u, v] = pol(a, RO);
+  x.save(); x.strokeStyle = W(.95); x.lineWidth = 1; x.lineCap = 'round';
+  x.shadowColor = `rgb(${INK})`; x.shadowBlur = blur(6);
+  x.beginPath(); x.moveTo(p, q); x.lineTo(u, v); x.stroke(); x.restore();
+  // 先端の輪: 中を透明に抜いてから縁を描く
+  x.save(); x.globalCompositeOperation = 'destination-out';
+  x.beginPath(); x.arc(u, v, 3.4, 0, TAU); x.fill(); x.restore();
+  x.save(); x.strokeStyle = `rgb(${INK})`; x.lineWidth = 1.2;
+  x.beginPath(); x.arc(u, v, 3.4, 0, TAU); x.stroke(); x.restore();
+}
+
+function label(seg) {
+  const am = A((seg.s + seg.e) / 2);
+  let [px, py] = pol(am, (RI + RO) / 2 + 2);
+  const f1 = '500 14px "Zen Kaku Gothic New", sans-serif', f2 = '400 9.5px "Zen Kaku Gothic New", sans-serif';
+  const lines = [{t: seg.name, f: f1, a: 1, lh: 18}];
+  x.font = f2; let cur = '';
+  for (const it of seg.items) {
+    const tr = cur ? cur + '・' + it : it;
+    if (cur && x.measureText(tr).width > 104) { lines.push({t: cur, f: f2, a: .8, lh: 13}); cur = it; } else cur = tr;
+  }
+  if (cur) lines.push({t: cur, f: f2, a: .8, lh: 13});
+  let w = 0; lines.forEach(l => { x.font = l.f; w = Math.max(w, x.measureText(l.t).width); });
+  const H = lines.reduce((n, l) => n + l.lh, 0);
+  px = Math.min(Math.max(px, C - RO + w / 2 + 6), C + RO - w / 2 - 6);
+  py = Math.min(Math.max(py, C - RO + H / 2 + 8), C + RO - H / 2 - 8);
+  let y = py - H / 2;
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineJoin = 'round';
+  for (const l of lines) {
+    x.font = l.f; const yy = y + l.lh / 2;
+    x.lineWidth = 3.5; x.strokeStyle = HALO; x.strokeText(l.t, px, yy);
+    x.fillStyle = W(l.a); x.fillText(l.t, px, yy); y += l.lh;
+  }
+}
+
+function center(d) {
+  const t = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  x.font = '21px Marcellus, serif'; x.fillStyle = W(.95);
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t, C, C + 1);
+}
+
+// ===== 時刻 =====
+const t0 = Date.now();
+let startVt = t0;
+if (FROM && /^\d{1,2}:\d{2}$/.test(FROM)) {
+  const [hh, mm] = FROM.split(':').map(Number);
+  const d = new Date(t0); d.setHours(hh, mm, 0, 0); startVt = d.getTime();
+}
+const virtualNow = () => startVt + (Date.now() - t0) * SPEED;
+
+['12px Marcellus', '500 14px "Zen Kaku Gothic New"', '400 10px "Zen Kaku Gothic New"']
+  .forEach(f => document.fonts && document.fonts.load(f, '0仕事').catch(() => {}));
+
+let lastKey = '';
+function frame() {
+  const d = new Date(virtualNow());
+  const h = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  // 針は1日1周なので、描き直しは1秒ごと（早送り時は毎フレーム）で十分
+  const key = SPEED > 1 ? String(Math.random()) : `${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}:${cv.width}:${isDark()}`;
+  if (key !== lastKey) {
+    lastKey = key;
+    INK = isDark() ? '255,255,255' : '38,37,34';
+    HALO = isDark() ? 'rgba(24,24,24,0.88)' : 'rgba(255,255,255,0.9)';
+    const seg = SCHED.find(s => h >= s.s && h < s.e) || SCHED[SCHED.length - 1];
+    x.setTransform(DPR * scale, 0, 0, DPR * scale, 0, 0);
+    x.clearRect(0, 0, S, S);
+    base(); rim(seg); hand(h); label(seg); center(d);
+  }
+  requestAnimationFrame(frame);
+}
+document.fonts && document.fonts.ready.then(() => { lastKey = ''; });
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
